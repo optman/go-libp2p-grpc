@@ -6,6 +6,7 @@ require (
 	github.com/golang/protobuf v1.3.2
 	github.com/ipfs/go-log v0.0.1
 	github.com/libp2p/go-libp2p v0.5.0
+	github.com/libp2p/go-libp2p-core v0.3.0
 	github.com/libp2p/go-libp2p-crypto v0.1.0
 	github.com/libp2p/go-libp2p-host v0.1.0
 	github.com/libp2p/go-libp2p-interface-connmgr v0.1.0 // indirect

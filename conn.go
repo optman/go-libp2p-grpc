@@ -2,7 +2,6 @@ package p2pgrpc
 
 import (
 	inet "github.com/libp2p/go-libp2p-net"
-	manet "github.com/multiformats/go-multiaddr-net"
 	"net"
 )
 
@@ -13,20 +12,12 @@ type streamConn struct {
 
 // LocalAddr returns the local address.
 func (c *streamConn) LocalAddr() net.Addr {
-	addr, err := manet.ToNetAddr(c.Stream.Conn().LocalMultiaddr())
-	if err != nil {
-		return fakeLocalAddr()
-	}
-	return addr
+	return &addr{c.Stream.Conn().LocalPeer()}
 }
 
 // RemoteAddr returns the remote address.
 func (c *streamConn) RemoteAddr() net.Addr {
-	addr, err := manet.ToNetAddr(c.Stream.Conn().RemoteMultiaddr())
-	if err != nil {
-		return fakeRemoteAddr()
-	}
-	return addr
+	return &addr{c.Stream.Conn().RemotePeer()}
 }
 
 var _ net.Conn = &streamConn{}

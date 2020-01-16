@@ -13,6 +13,10 @@ import (
 // Protocol is the GRPC-over-libp2p protocol.
 const Protocol protocol.ID = "/grpc/0.0.1"
 
+// Network is the "net.Addr.Network()" name returned by stream connection
+// In turn, the "net.Addr.String()" will be a peer ID.
+var Network = "libp2p"
+
 // GRPCProtocol is the GRPC-transported protocol handler.
 type GRPCProtocol struct {
 	ctx        context.Context

@@ -44,7 +44,7 @@ func (l *grpcListener) Addr() net.Addr {
 			}
 		}
 	}
-	return fakeLocalAddr()
+	return &addr{l.host.ID()}
 }
 
 // Close closes the listener.

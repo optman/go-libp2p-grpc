@@ -1,15 +1,14 @@
 package p2pgrpc
 
-import "net"
+import "github.com/libp2p/go-libp2p-core/peer"
 
-// fakeLocalAddr returns a dummy local address.
-func fakeLocalAddr() net.Addr {
-	localIp := net.ParseIP("127.0.0.1")
-	return &net.TCPAddr{IP: localIp, Port: 0}
-}
+// addr implements net.Addr and holds a libp2p peer ID.
+type addr struct{ id peer.ID }
 
-// fakeRemoteAddr returns a dummy remote address.
-func fakeRemoteAddr() net.Addr {
-	remoteIp := net.ParseIP("127.1.0.1")
-	return &net.TCPAddr{IP: remoteIp, Port: 0}
-}
+// Network returns the name of the network that this address belongs to
+// (libp2p).
+func (a *addr) Network() string { return Network }
+
+// String returns the peer ID of this address in string form
+// (B58-encoded).
+func (a *addr) String() string { return a.id.Pretty() }
