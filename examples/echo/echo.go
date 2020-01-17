@@ -143,15 +143,20 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Set the grpc protocol handler on it
 	grpcProto := p2pgrpc.NewGRPCProtocol(context.Background(), ha)
 
-	// Register our echoer GRPC service.
-	echosvc.RegisterEchoServiceServer(grpcProto.GetGRPCServer(), &Echoer{PeerID: ha.ID()})
-
+	//server
 	if *target == "" {
+		grpcServer := grpc.NewServer()
+
+		// Register our echoer GRPC service.
+		echosvc.RegisterEchoServiceServer(grpcServer, &Echoer{PeerID: ha.ID()})
+
 		log.Println("listening for connections")
-		select {} // hang forever
+
+		listener := grpcProto.NewListener()
+
+		log.Fatal(grpcServer.Serve(listener))
 	}
 	/**** This is where the listener code ends ****/
 
