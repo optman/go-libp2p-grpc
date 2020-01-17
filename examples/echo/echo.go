@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"flag"
@@ -12,17 +11,21 @@ import (
 	"os"
 
 	golog "github.com/ipfs/go-log"
+	csms "github.com/libp2p/go-conn-security-multistream"
+	"github.com/libp2p/go-libp2p-core/sec/insecure"
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	host "github.com/libp2p/go-libp2p-host"
-	net "github.com/libp2p/go-libp2p-net"
 	peer "github.com/libp2p/go-libp2p-peer"
 	pstore "github.com/libp2p/go-libp2p-peerstore"
+	pstoremem "github.com/libp2p/go-libp2p-peerstore/pstoremem"
 	swarm "github.com/libp2p/go-libp2p-swarm"
+	tptu "github.com/libp2p/go-libp2p-transport-upgrader"
+	yamux "github.com/libp2p/go-libp2p-yamux"
 	bhost "github.com/libp2p/go-libp2p/p2p/host/basic"
+	msmux "github.com/libp2p/go-stream-muxer-multistream"
+	tcp "github.com/libp2p/go-tcp-transport"
 	ma "github.com/multiformats/go-multiaddr"
 	gologging "github.com/whyrusleeping/go-logging"
-	msmux "github.com/whyrusleeping/go-smux-multistream"
-	yamux "github.com/whyrusleeping/go-smux-yamux"
 
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/paralin/go-libp2p-grpc"
@@ -44,8 +47,8 @@ func (e *Echoer) Echo(ctx context.Context, req *echosvc.EchoRequest) (*echosvc.E
 }
 
 // makeBasicHost creates a LibP2P host with a random peer ID listening on the
-// given multiaddress. It will use secio if secio is true.
-func makeBasicHost(listenPort int, secio bool, randseed int64) (host.Host, error) {
+// given multiaddress.
+func makeBasicHost(listenPort int, randseed int64) (host.Host, error) {
 	// If the seed is zero, use real cryptographic randomness. Otherwise, use a
 	// deterministic randomness source to make generated keys stay the same
 	// across multiple runs
@@ -76,35 +79,34 @@ func makeBasicHost(listenPort int, secio bool, randseed int64) (host.Host, error
 	}
 
 	// Create a peerstore
-	ps := pstore.NewPeerstore()
-
-	// If using secio, we add the keys to the peerstore
-	// for this peer ID.
-	if secio {
-		ps.AddPrivKey(pid, priv)
-		ps.AddPubKey(pid, pub)
-	}
-
-	// Set up stream multiplexer
-	tpt := msmux.NewBlankTransport()
-	tpt.AddTransport("/yamux/1.0.0", yamux.DefaultTransport)
+	ps := pstoremem.NewPeerstore()
+	ps.AddPrivKey(pid, priv)
+	ps.AddPubKey(pid, pub)
 
 	// Create swarm (implements libP2P Network)
-	swrm, err := swarm.NewSwarmWithProtector(
-		context.Background(),
-		[]ma.Multiaddr{addr},
-		pid,
-		ps,
-		nil,
-		tpt,
-		nil,
-	)
-	if err != nil {
+	swrm := swarm.NewSwarm(context.Background(), pid, ps, nil)
+
+	// Set up stream multiplexer
+	muxer := msmux.NewBlankTransport()
+	muxer.AddTransport("/yamux/1.0.0", yamux.DefaultTransport)
+
+	secMuxer := new(csms.SSMuxer)
+	secMuxer.AddTransport(insecure.ID, insecure.NewWithIdentity(pid, priv))
+
+	upgrader := &tptu.Upgrader{
+		Secure: secMuxer,
+		Muxer:  muxer,
+	}
+
+	tpt := tcp.NewTCPTransport(upgrader)
+	if err := swrm.AddTransport(tpt); err != nil {
 		return nil, err
 	}
 
-	netw := (*swarm.Network)(swrm)
-	basicHost := bhost.New(netw)
+	basicHost := bhost.New(swrm)
+	if err := basicHost.Network().Listen([]ma.Multiaddr{addr}...); err != nil {
+		return nil, err
+	}
 
 	// Build host multiaddress
 	hostAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ipfs/%s", basicHost.ID().Pretty()))
@@ -113,11 +115,7 @@ func makeBasicHost(listenPort int, secio bool, randseed int64) (host.Host, error
 	// by encapsulating both addresses:
 	fullAddr := addr.Encapsulate(hostAddr)
 	log.Printf("I am %s\n", fullAddr)
-	if secio {
-		log.Printf("Now run \"./echo -l %d -d %s -secio\" on a different terminal\n", listenPort+1, fullAddr)
-	} else {
-		log.Printf("Now run \"./echo -l %d -d %s\" on a different terminal\n", listenPort+1, fullAddr)
-	}
+	log.Printf("Now run \"./echo -l %d -d %s\" on a different terminal\n", listenPort+1, fullAddr)
 
 	return basicHost, nil
 }
@@ -132,7 +130,6 @@ func main() {
 	listenF := flag.Int("l", 0, "wait for incoming connections")
 	target := flag.String("d", "", "target peer to dial")
 	echoMsg := flag.String("m", "Hello, world", "message to echo")
-	secio := flag.Bool("secio", false, "enable secio")
 	seed := flag.Int64("seed", 0, "set random seed for id generation")
 	flag.Parse()
 
@@ -141,7 +138,7 @@ func main() {
 	}
 
 	// Make a host that listens on the given multiaddress
-	ha, err := makeBasicHost(*listenF, *secio, *seed)
+	ha, err := makeBasicHost(*listenF, *seed)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -206,17 +203,4 @@ func main() {
 		log.Fatalln(err)
 	}
 	log.Println()
-}
-
-// doEcho reads a line of data a stream and writes it back
-func doEcho(s net.Stream) error {
-	buf := bufio.NewReader(s)
-	str, err := buf.ReadString('\n')
-	if err != nil {
-		return err
-	}
-
-	log.Printf("read: %s\n", str)
-	_, err = s.Write([]byte(str))
-	return err
 }
